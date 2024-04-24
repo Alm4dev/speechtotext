@@ -1,0 +1,173 @@
+
+from PyQt5.QtGui import QFont, QTextCursor
+from PyQt5.QtCore import Qt
+import sys
+from PyQt5.QtWidgets import QApplication, QMainWindow, QTextEdit, QPushButton, QSpacerItem, QVBoxLayout, QWidget, \
+    QFileDialog, \
+    QDesktopWidget, QHBoxLayout, QSizePolicy
+from PyQt5.QtGui import QFont
+import threading
+import speech_recognition as sr
+
+
+class ArabicTextEditor(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Arabic Text Editor")
+        self.resize(1500, 900)  # Set initial window size
+
+        self.center_window()
+
+        central_widget = QWidget()  # Create a central widget
+        self.setCentralWidget(central_widget)  # Set the central widget
+
+        self.text_edit = QTextEdit()
+        self.text_edit.setFontFamily("Arial")
+        self.text_edit.setFontPointSize(18)  # Set font size to 20
+
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.clicked.connect(self.clear_text)
+        self.clear_button.setFixedSize(200, 60)  # Set button size
+        self.clear_button.setStyleSheet(
+            "QPushButton { border: none; color: white; background-color: #4CAF50; padding: 14px 28px; text-align: center; text-decoration: none; display: inline-block; font-size: 18px; margin: 4px 2px; cursor: pointer; border-radius: 8px; } QPushButton:hover { background-color: #45a049; } QPushButton:pressed { background-color: #4CAF50; }")
+
+        self.save_button = QPushButton("Save")
+        self.save_button.clicked.connect(self.save_text)
+        self.save_button.setFixedSize(200, 60)  # Set button size
+        self.save_button.setStyleSheet(
+            "QPushButton { border: none; color: white; background-color: #4CAF50; padding: 14px 28px; text-align: center; text-decoration: none; display: inline-block; font-size: 18px; margin: 4px 2px; cursor: pointer; border-radius: 8px; } QPushButton:hover { background-color: #45a049; } QPushButton:pressed { background-color: #4CAF50; }")
+
+        self.record_button = QPushButton("Start Recording")
+        self.record_button.clicked.connect(self.start_stop_recording)
+        self.record_button.setFixedSize(400, 100)  # Set button size
+
+        # Set initial stylesheet for record button without background color
+        self.record_button.setStyleSheet(
+            "QPushButton { border: none; color: green; padding: 14px 28px; text-align: center; text-decoration: none; display: inline-block; font-size: 24px; margin: 4px 2px; cursor: pointer; border-radius: 8px; } QPushButton:hover { background-color: #45a049; } QPushButton:pressed { background-color: #4CAF50; }")
+
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.save_button)
+        button_layout.addWidget(self.clear_button)
+
+        # Add a spacer item to create space between Save and Clear buttons and the Record button
+        spacer_item = QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        button_layout.addItem(spacer_item)
+
+        button_layout.addWidget(self.record_button)
+
+        main_layout = QVBoxLayout(central_widget)  # Use central widget for the main layout
+        main_layout.addWidget(self.text_edit)
+        main_layout.addLayout(button_layout)
+
+        # Connect textChanged signal to maintain font size
+        self.text_edit.textChanged.connect(self.maintain_font_size)
+
+        # Speech recognition setup
+        self.recognizer = sr.Recognizer()
+        self.is_recording = False
+        self.recording_thread = None
+        self.last_recognized_text = ""  # Store the last recognized text
+
+    def center_window(self):
+        # Center the window on the screen
+        screen_geometry = QApplication.desktop().screenGeometry()
+        x = (screen_geometry.width() - self.width()) // 2
+        y = (screen_geometry.height() - self.height()) // 2
+        self.move(x, y)
+
+    def clear_text(self):
+        self.text_edit.clear()
+
+    def save_text(self):
+        # Open a file dialog to choose the file location
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save File", "", "Text Files (*.txt)")
+
+        if file_path:
+            text = self.text_edit.toPlainText()
+            with open(file_path, "w", encoding="utf-8") as file:
+                file.write(text)
+            print(f"Text saved successfully in {file_path}!")
+
+    def maintain_font_size(self):
+        # Maintain font size after text change
+        self.text_edit.setFontPointSize(20)
+
+    def start_stop_recording(self):
+        if not self.is_recording:
+            self.start_recording()
+            self.record_button.setStyleSheet("QPushButton { background-color: #ff4d4d; border: none; color: white; padding: 14px 28px; text-align: center; text-decoration: none; display: inline-block; font-size: 18px; margin: 4px 2px; cursor: pointer; border-radius: 8px; } QPushButton:hover { background-color: #e63939; } QPushButton:pressed { background-color: #ff4d4d; }")
+            self.record_button.setText("Stop Recording")
+        else:
+            self.stop_recording()
+            self.record_button.setStyleSheet("QPushButton { background-color: #4CAF50; border: none; color: white; padding: 14px 28px; text-align: center; text-decoration: none; display: inline-block; font-size: 18px; margin: 4px 2px; cursor: pointer; border-radius: 8px; } QPushButton:hover { background-color: #45a049; } QPushButton:pressed { background-color: #4CAF50; }")
+            self.record_button.setText("Start Recording")
+
+    def start_recording(self):
+        if not self.is_recording:  # Check if recording is not already in progress
+            self.is_recording = True
+
+            if self.recording_thread is None or not self.recording_thread.is_alive():
+                self.recording_thread = threading.Thread(target=self.record)
+                self.recording_thread.start()
+
+    def stop_recording(self):
+        self.is_recording = False
+        if self.recording_thread and self.recording_thread.is_alive():
+            self.recording_thread.join(timeout=1)
+
+    def record(self):
+        with sr.Microphone() as source:
+            print("Say something:")
+            while self.is_recording:
+                try:
+                    audio = self.recognizer.listen(source, timeout=15)
+                    text = self.recognizer.recognize_google(audio, language="ar")
+
+                    # Perform text replacements
+                    text = text.replace("فاصله", ",")
+                    text = text.replace("فاصلة", ",")
+                    text = text.replace("فاصلي", ",")
+                    text = text.replace("اشارة استفهام", "؟")
+
+                    text = text.replace("فتح قوس", "(")
+                    text = text.replace("أغلاق قوس", ")")
+                    text = text.replace("اغلاق قوس", ")")
+                    text = text.replace("نقطتين", ":")
+                    text = text.replace("نقطتين فوق السطر", ":")
+                    text = text.replace("نقطه", ".")
+                    text = text.replace("نكته", ".")
+                    text = text.replace("من أول السطر", "\n")
+                    text = text.replace("سطر جديد", "\n")
+                    text = text.replace("من اول السطر", "\n")
+                    text = text.replace("من اول لسطر", "\n")
+                    text = text.replace("من اول سطر", "\n")
+
+                    # Check if the recognized text is different from the last recognized text
+                    if text != self.last_recognized_text:
+                        # Update the GUI with recognized text
+                        self.update_gui_with_recognized_text(text)
+                        # Update the last recognized text
+                        self.last_recognized_text = text
+
+                except sr.UnknownValueError:
+                    print("Couldn't understand audio. Please try again.")
+                except sr.RequestError as e:
+                    print(f"Speech recognition request failed; {e}")
+
+    def update_gui_with_recognized_text(self, text):
+        # Update the GUI with recognized text
+        cursor = self.text_edit.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        self.text_edit.setTextCursor(cursor)
+
+        # Set font size to 20
+        font = QFont("Arial", 20)
+        self.text_edit.setCurrentFont(font)
+
+        self.text_edit.insertPlainText(text + " ")  # Insert text with a space
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    editor = ArabicTextEditor()
+    editor.show()
+    sys.exit(app.exec_())
